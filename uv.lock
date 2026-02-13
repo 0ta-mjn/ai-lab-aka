@@ -329,11 +329,12 @@ wheels = [
 [[package]]
 name = "langfuse-sample"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "ai-sdk-python" },
     { name = "httpx" },
     { name = "langfuse" },
+    { name = "python-dotenv" },
 ]
 
 [package.dev-dependencies]
@@ -347,6 +348,7 @@ requires-dist = [
     { name = "ai-sdk-python", specifier = ">=0.1.1" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langfuse", specifier = ">=3.14.1" },
+    { name = "python-dotenv", specifier = ">=1.0.1" },
 ]
 
 [package.metadata.requires-dev]
