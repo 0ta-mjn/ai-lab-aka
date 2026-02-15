@@ -6,5 +6,11 @@
       "source.fixAll": "explicit",
       "source.organizeImports": "explicit"
     }
+  },
+  "chat.tools.terminal.autoApprove": {
+    "make lint": true,
+    "make typecheck": true,
+    "make test": true,
+    "make format": true
   }
 }
