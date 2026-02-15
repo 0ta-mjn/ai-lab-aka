@@ -16,11 +16,7 @@ def register_fetch_jina(parser: argparse.ArgumentParser) -> None:
         url = args.url
         result = fetch_jina_reader_page(url)
         if result:
-            print("Content:", result["content"])
-            print("Title:", result.get("title"))
-            print("Description:", result.get("description"))
-            print("URL:", result["url"])
-            print("Links:", result["links"])
+            print(result.model_dump_json(indent=2))
         else:
             print(f"Failed to fetch page via Jina for URL: {url}")
 

@@ -1,17 +1,40 @@
 import logging
 import os
-from typing import Dict, Optional, TypedDict
+from typing import List, Optional
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from langfuse import get_client, observe
+from pydantic import BaseModel
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
 
-class JinaReaderResponse(TypedDict):
+def _normalize_url(base_url: str, link: str) -> str:
+    """Resolve relative URLs and remove fragments."""
+    try:
+        absolute_url = urljoin(base_url, link)
+        parsed = urlparse(absolute_url)
+        if parsed.scheme not in ["http", "https"]:
+            return link
+
+        normalized = parsed.scheme + "://" + parsed.netloc + parsed.path
+        if parsed.query:
+            normalized += "?" + parsed.query
+        return normalized
+    except Exception:
+        return link
+
+
+class LinkItem(BaseModel):
+    title: str
+    url: str
+
+
+class JinaReaderResponse(BaseModel):
     content: str
-    links: Dict[str, str]
+    links: List[LinkItem]
     title: Optional[str]
     description: Optional[str]
     url: str
@@ -80,13 +103,24 @@ def fetch_jina_reader_page(url: str) -> Optional[JinaReaderResponse]:
                     usage_details={"input_tokens": 0, "output_tokens": usage_tokens}
                 )
 
-            result: JinaReaderResponse = {
-                "content": data.get("content", ""),
-                "links": data.get("links", {}),
-                "title": data.get("title"),
-                "description": data.get("description"),
-                "url": data.get("url", url),
-            }
+            # Jina API returns links as a dict {title: url}
+            page_url = data.get("url", url)
+            raw_links = data.get("links", {})
+            formatted_links = []
+            if isinstance(raw_links, dict):
+                for text, link_url in raw_links.items():
+                    normalized_link_url = _normalize_url(page_url, link_url)
+                    formatted_links.append(
+                        LinkItem(title=text, url=normalized_link_url)
+                    )
+
+            result = JinaReaderResponse(
+                content=data.get("content", ""),
+                links=formatted_links,
+                title=data.get("title"),
+                description=data.get("description"),
+                url=page_url,
+            )
             return result
 
     except httpx.HTTPStatusError as e:
