@@ -37,6 +37,7 @@ line-length = 88
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 ignore = []
+extend-ignore = ["E501"]
 
 
 [tool.ruff.format]
