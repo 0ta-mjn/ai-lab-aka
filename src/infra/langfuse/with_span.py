@@ -67,6 +67,9 @@ class ObservationHandle:
         self.set_output(value)
         return value
 
+    def error(self, error: Exception) -> None:
+        self.span.update(level="ERROR", status_message=str(error))
+
 
 @contextmanager
 def with_langfuse_span(

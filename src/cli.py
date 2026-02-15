@@ -2,7 +2,8 @@ import argparse
 
 from dotenv import load_dotenv
 
-from src.infra.jina_ai_reader import fetch_jina_reader_page
+from src.company_detail.workflow import run_company_detail_workflow
+from src.infra.jina_ai import fetch_jina_reader_page
 
 
 def register_fetch_jina(parser: argparse.ArgumentParser) -> None:
@@ -26,6 +27,39 @@ def register_fetch_jina(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(func=func)
 
 
+def register_company_detail_workflow(parser: argparse.ArgumentParser) -> None:
+    """
+    Company Detail Workflowを実行するCLIコマンド
+    """
+    parser.add_argument("--company_name", type=str, help="Company Name")
+    parser.add_argument("--company_url", type=str, help="Company URL")
+    parser.add_argument(
+        "--session_id",
+        type=str,
+        default=None,
+        help="Langfuse Session ID for trace correlation",
+    )
+
+    def func(args: argparse.Namespace) -> None:
+        result = run_company_detail_workflow(
+            args.company_name,
+            args.company_url,
+            span_context={
+                "trace_init": {
+                    "name": "company_detail_cli",
+                    "session_id": args.session_id,
+                    "metadata": {
+                        "company_name": args.company_name,
+                        "company_url": args.company_url,
+                    },
+                },
+            },
+        )
+        print(result.model_dump_json(indent=2))
+
+    parser.set_defaults(func=func)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """
     CLIコマンドを定義する
@@ -35,6 +69,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     register_fetch_jina(
         subparsers.add_parser("fetch-jina", help="Fetch a page using Jina AI Reader")
+    )
+
+    register_company_detail_workflow(
+        subparsers.add_parser("company-detail", help="Run company detail workflow")
     )
 
     return parser
