@@ -1,4 +1,4 @@
-.PHONY: lint format fix setup
+.PHONY: lint format fix setup typecheck
 
 setup:
 	uv run pre-commit install
@@ -11,3 +11,6 @@ format:
 
 fix:
 	uv run ruff check --fix .
+
+typecheck:
+	uv run mypy src

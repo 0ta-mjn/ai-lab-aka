@@ -8,6 +8,7 @@ dependencies = [
     "ai-sdk-python>=0.1.1",
     "httpx>=0.28.1",
     "langfuse>=3.14.1",
+    "mypy>=1.19.1",
     "python-dotenv>=1.0.1",
 ]
 
@@ -43,4 +44,15 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
+
+
+[tool.mypy]
+python_version = "3.12"
+pretty = true
+show_error_codes = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+no_implicit_optional = true
+ignore_missing_imports = true
 
