@@ -1,7 +1,7 @@
 from typing import Any, Dict, Literal, Optional, Type, TypeVar
 
 import litellm
-from langfuse import get_client
+from langfuse import LangfuseSpan, get_client
 from pydantic import BaseModel
 
 from .registry import ModelName, get_model
@@ -20,6 +20,8 @@ def generate_structured_output(
         Literal["none", "minimal", "low", "medium", "high", "xhigh", "default"]
     ] = None,
     metadata: Optional[Dict[str, Any]] = None,
+    *,
+    parent_span: LangfuseSpan | None = None,
 ) -> T:
     """
     Generate structured output using LiteLLM and trace as a Langfuse Generation.
@@ -37,7 +39,6 @@ def generate_structured_output(
     Returns:
         Instance of output_schema.
     """
-    client = get_client()
     model_adapter = get_model(model)
 
     if metadata is None:
@@ -49,9 +50,11 @@ def generate_structured_output(
     metadata["output_schema"] = output_schema.model_json_schema()
 
     # Start a generation
-    with client.start_as_current_observation(
+    parent = parent_span if parent_span else get_client()
+    system_prompt = system_prompt.strip() if system_prompt else None
+    prompt = prompt.strip()
+    with parent.start_as_current_generation(
         name=generation_name,
-        as_type="generation",
         model=model_adapter.get_langfuse_model_name(),
         input={
             "system": system_prompt,

@@ -35,7 +35,11 @@ def run_company_detail_workflow(
 
             # 1. Page Discovery (探索)
             discovery_result = discover_company_detail_candidates(
-                company_name, company_url
+                company_name,
+                company_url,
+                span_context={
+                    "parent_span": obs.span,
+                },
             )
 
             # 2. Extraction (抽出)

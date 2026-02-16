@@ -1,16 +1,19 @@
-from langfuse import observe
+import logging
 
+from src.infra.langfuse import WithSpanContext, with_langfuse_span
+
+from .explore_hubs import explore_hubs
 from .schema import DiscoveryResult
+from .select_candidates import select_candidates
+
+logger = logging.getLogger(__name__)
 
 
-@observe(
-    as_type="span",
-    name="discover_company_detail_candidates",
-    capture_input=True,
-    capture_output=True,
-)
 def discover_company_detail_candidates(
-    company_name: str, company_url: str
+    company_name: str,
+    company_url: str,
+    *,
+    span_context: WithSpanContext | None = None,
 ) -> DiscoveryResult:
     """
     フロー1: ページ探索 (Discover)
@@ -24,8 +27,22 @@ def discover_company_detail_candidates(
     Returns:
         DiscoveryResult: 候補URLのリストを含むオブジェクト
     """
-    # TODO: 実装
-    # 1. ハブページ調査
-    # 2. サイトマップ確認
-    # 3. 候補選定
-    raise NotImplementedError
+
+    with with_langfuse_span(
+        span_name="discover_pages",
+        span_context=span_context,
+    ) as span:
+        span.set_input({"company_name": company_name, "company_url": company_url})
+
+        # Explore Hubs
+        hubs = explore_hubs(company_name, company_url, parent_span=span.span)
+
+        # Select Candidates
+        discovery_result = select_candidates(
+            company_name,
+            company_url,
+            hubs,
+            parent_span=span.span,
+        )
+
+        return span.finish(discovery_result)

@@ -111,7 +111,10 @@ def fetch_jina_reader_page(url: str) -> Optional[JinaReaderResponse]:
                 for text, link_url in raw_links.items():
                     normalized_link_url = _normalize_url(page_url, link_url)
                     formatted_links.append(
-                        LinkItem(title=text, url=normalized_link_url)
+                        LinkItem(
+                            title=text.strip() if isinstance(text, str) else "",
+                            url=normalized_link_url,
+                        )
                     )
 
             result = JinaReaderResponse(
