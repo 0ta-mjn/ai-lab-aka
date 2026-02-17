@@ -22,5 +22,7 @@ class BusinessSummaryOutput(BaseModel):
 class CompanyDetailOutput(BaseModel):
     """最終出力フォーマット"""
 
+    company_name: str
+    company_url: str
     address: List[AddressOutput]
     business_summary: BusinessSummaryOutput

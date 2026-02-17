@@ -43,10 +43,12 @@ def run_company_detail_workflow(
             )
 
             # 2. Extraction (抽出)
-            extraction_results = [
-                extract_company_detail_from_page(candidate)
-                for candidate in discovery_result.candidates
-            ]
+            extraction_results = []
+            for candidate in discovery_result.candidates:
+                extracted = extract_company_detail_from_page(candidate)
+                if extracted is None:
+                    continue
+                extraction_results.append(extracted)
 
             # 3. Merge (統合)
             final_output = merge_company_detail_extractions(extraction_results)
