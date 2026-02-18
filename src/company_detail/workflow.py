@@ -45,13 +45,25 @@ def run_company_detail_workflow(
             # 2. Extraction (抽出)
             extraction_results = []
             for candidate in discovery_result.candidates:
-                extracted = extract_company_detail_from_page(candidate)
+                extracted = extract_company_detail_from_page(
+                    candidate,
+                    span_context={
+                        "parent_span": obs.span,
+                    },
+                )
                 if extracted is None:
                     continue
                 extraction_results.append(extracted)
 
             # 3. Merge (統合)
-            final_output = merge_company_detail_extractions(extraction_results)
+            final_output = merge_company_detail_extractions(
+                company_name,
+                company_url,
+                extraction_results,
+                span_context={
+                    "parent_span": obs.span,
+                },
+            )
             return obs.finish(final_output)
         except Exception as e:
             obs.error(e)

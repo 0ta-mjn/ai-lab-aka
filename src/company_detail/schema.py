@@ -26,3 +26,4 @@ class CompanyDetailOutput(BaseModel):
     company_url: str
     address: List[AddressOutput]
     business_summary: BusinessSummaryOutput
+    viewed_source_urls: List[str]
