@@ -2,8 +2,36 @@ import argparse
 
 from dotenv import load_dotenv
 
+from src.company_detail.run_csv_batch import run_company_detail_workflow_csv
 from src.company_detail.workflow import run_company_detail_workflow
 from src.infra.jina_ai import fetch_jina_reader_page
+
+
+def register_company_detail_workflow_csv(parser: argparse.ArgumentParser) -> None:
+    """
+    Company Detail WorkflowをCSVバッチ実行するCLIコマンド
+    """
+    parser.add_argument(
+        "csv_path", type=str, help="Input CSV file path (company_name, company_url)"
+    )
+    parser.add_argument(
+        "--output_path", type=str, default=None, help="Output file path (JSON Lines)"
+    )
+    parser.add_argument(
+        "--session_id",
+        type=str,
+        default=None,
+        help="Langfuse Session ID for trace correlation",
+    )
+
+    def func(args: argparse.Namespace) -> None:
+        run_company_detail_workflow_csv(
+            args.csv_path,
+            output_path=args.output_path,
+            session_id=args.session_id,
+        )
+
+    parser.set_defaults(func=func)
 
 
 def register_fetch_jina(parser: argparse.ArgumentParser) -> None:
@@ -69,6 +97,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     register_company_detail_workflow(
         subparsers.add_parser("company-detail", help="Run company detail workflow")
+    )
+
+    register_company_detail_workflow_csv(
+        subparsers.add_parser(
+            "company-detail-csv", help="Run company detail workflow in batch from CSV"
+        )
     )
 
     return parser
