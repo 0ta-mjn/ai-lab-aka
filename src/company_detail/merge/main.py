@@ -110,7 +110,7 @@ def merge_company_detail_extractions(
 """
 
     merged = generate_structured_output(
-        model="openai/gpt-5-mini",
+        model="openai/gpt-5.4-mini",
         system_prompt="""
 Role:
 - Merge page-level extraction results and produce final structured output.

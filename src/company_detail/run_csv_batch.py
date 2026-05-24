@@ -2,8 +2,9 @@ import csv
 import json
 import uuid
 from logging import getLogger
-from typing import Optional
+from typing import Literal, Optional
 
+from src.company_detail.agent import run_company_detail_agent
 from src.company_detail.workflow import run_company_detail_workflow
 
 logger = getLogger(__name__)
@@ -13,6 +14,7 @@ def run_company_detail_workflow_csv(
     csv_path: str,
     output_path: Optional[str] = None,
     session_id: Optional[str] = None,
+    workflow_type: Literal["agents", "workflow"] = "workflow",
 ) -> None:
     """
     CSVファイルから企業名・URLをバッチ実行し、結果を出力する
@@ -24,7 +26,7 @@ def run_company_detail_workflow_csv(
 
     results = []
     if session_id is None:
-        session_id = f"company-detail-{uuid.uuid4()}"
+        session_id = f"company-detail-{workflow_type}-{uuid.uuid4()}"
     with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -37,20 +39,30 @@ def run_company_detail_workflow_csv(
                 continue
 
             logger.info("Processing company: %s, URL: %s", company_name, company_url)
-            result = run_company_detail_workflow(
-                company_name,
-                company_url,
-                span_context={
-                    "trace_init": {
-                        "name": "company_detail_csv_batch",
-                        "session_id": session_id,
-                        "metadata": {
-                            "company_name": company_name,
-                            "company_url": company_url,
-                        },
+            span_context = {
+                "trace_init": {
+                    "name": "company_detail_csv_batch",
+                    "session_id": session_id,
+                    "tags": [workflow_type],
+                    "metadata": {
+                        "company_name": company_name,
+                        "company_url": company_url,
                     },
                 },
-            )
+            }
+
+            if workflow_type == "agents":
+                result = run_company_detail_agent(
+                    company_name,
+                    company_url,
+                    span_context=span_context,
+                )
+            else:
+                result = run_company_detail_workflow(
+                    company_name,
+                    company_url,
+                    span_context=span_context,
+                )
             logger.info("Finished processing company: %s", company_name)
             results.append(result)
             print(json.dumps(result.model_dump(), ensure_ascii=False))

@@ -24,11 +24,20 @@ def register_company_detail_workflow_csv(parser: argparse.ArgumentParser) -> Non
         help="Langfuse Session ID for trace correlation",
     )
 
+    parser.add_argument(
+        "--workflow_type",
+        type=str,
+        choices=["agents", "workflow"],
+        default="workflow",
+        help="Type of workflow to run (agents or workflow)",
+    )
+
     def func(args: argparse.Namespace) -> None:
         run_company_detail_workflow_csv(
             args.csv_path,
             output_path=args.output_path,
             session_id=args.session_id,
+            workflow_type=args.workflow_type,
         )
 
     parser.set_defaults(func=func)
