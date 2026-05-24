@@ -75,7 +75,7 @@ Available Links (index is global):
     hub_indices = []
     try:
         hub_result = generate_structured_output(
-            model="gemini/gemini-2.5-flash-lite",
+            model="gemini/gemini-3.1-flash-lite",
             system_prompt="""
 Role: Select hub-page candidates from a same-domain link list for a company website discovery workflow.
 

@@ -36,13 +36,13 @@ class GoogleLLMModel(BaseLLMModel):
 
 
 ModelName = Literal[
-    "gemini/gemini-2.5-flash-lite",
-    "openai/gpt-5-mini",
+    "gemini/gemini-3.1-flash-lite",
+    "openai/gpt-5.4-mini",
 ]
 
 MODELS: dict[ModelName, BaseLLMModel] = {
-    "gemini/gemini-2.5-flash-lite": GoogleLLMModel("gemini-2.5-flash-lite"),
-    "openai/gpt-5-mini": OpenAILLMModel("gpt-5-mini"),
+    "gemini/gemini-3.1-flash-lite": GoogleLLMModel("gemini-3.1-flash-lite"),
+    "openai/gpt-5.4-mini": OpenAILLMModel("gpt-5.4-mini"),
 }
 
 

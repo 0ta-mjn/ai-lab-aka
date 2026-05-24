@@ -5,6 +5,7 @@ setup:
 
 lint:
 	uv run ruff check .
+	uvx ty check
 
 format:
 	uv run ruff format .

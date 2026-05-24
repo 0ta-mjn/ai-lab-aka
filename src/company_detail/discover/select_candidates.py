@@ -85,7 +85,7 @@ Available Links:
 
     try:
         selection_result = generate_structured_output(
-            model="gemini/gemini-2.5-flash-lite",
+            model="gemini/gemini-3.1-flash-lite",
             system_prompt="""
 Role: Select the best candidate pages for downstream extraction from a provided same-domain link list.
 
