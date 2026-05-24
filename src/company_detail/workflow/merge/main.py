@@ -7,11 +7,15 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
 
-from src.infra.langfuse import WithSpanContext
+from src.company_detail.schema import (
+    AddressOutput,
+    BusinessSummaryOutput,
+    CompanyDetailOutput,
+)
+from src.infra.langfuse import WithSpanContext, with_langfuse_span
 from src.infra.llm import generate_structured_output
 
 from ..extract import PageExtractionResult
-from ..schema import AddressOutput, BusinessSummaryOutput, CompanyDetailOutput
 
 logger = logging.getLogger(__name__)
 
@@ -76,31 +80,43 @@ def merge_company_detail_extractions(
         CompanyDetailOutput: 統合された最終結果
     """
 
-    slot_to_url: Dict[int, str] = {}
-    pages_for_prompt = []
-
-    for index, extraction in enumerate(extractions, start=1):
-        slot_to_url[index] = extraction.url
-
-        parsed_url = urlparse(extraction.url)
-        path_hint = parsed_url.path or "/"
-        pages_for_prompt.append(
+    with with_langfuse_span(
+        span_name="validate_and_finalize_profile",
+        span_context=span_context,
+    ) as span:
+        span.set_input(
             {
-                "urlSlot": index,
-                "title": extraction.title,
-                "pathHint": path_hint,
-                "business": extraction.extracted.business,
-                "addresses": [
-                    {
-                        "description": address.description,
-                        "address": address.address,
-                    }
-                    for address in extraction.extracted.addresses
-                ],
+                "company_name": company_name,
+                "company_url": company_url,
+                "num_extractions": len(extractions),
             }
         )
 
-    merge_prompt = f"""
+        slot_to_url: Dict[int, str] = {}
+        pages_for_prompt = []
+
+        for index, extraction in enumerate(extractions, start=1):
+            slot_to_url[index] = extraction.url
+
+            parsed_url = urlparse(extraction.url)
+            path_hint = parsed_url.path or "/"
+            pages_for_prompt.append(
+                {
+                    "urlSlot": index,
+                    "title": extraction.title,
+                    "pathHint": path_hint,
+                    "business": extraction.extracted.business,
+                    "addresses": [
+                        {
+                            "description": address.description,
+                            "address": address.address,
+                        }
+                        for address in extraction.extracted.addresses
+                    ],
+                }
+            )
+
+        merge_prompt = f"""
 # Input
 - company_name: {company_name}
 - company_url: {company_url}
@@ -109,9 +125,9 @@ def merge_company_detail_extractions(
 {json.dumps(pages_for_prompt, ensure_ascii=False, indent=2)}
 """
 
-    merged = generate_structured_output(
-        model="openai/gpt-5.4-mini",
-        system_prompt="""
+        merged = generate_structured_output(
+            model="openai/gpt-5.4-mini",
+            system_prompt="""
 Role:
 - Merge page-level extraction results and produce final structured output.
 
@@ -152,35 +168,37 @@ Output examples:
         }
     }
 """,
-        prompt=merge_prompt,
-        output_schema=MergeStructuredOutput,
-        generation_name="merge_and_format",
-        metadata={
-            "num_pages_used": len(extractions),
-            "num_address_candidates": sum(
-                len(item.extracted.addresses) for item in extractions
-            ),
-            "num_business_candidates": sum(
-                len(item.extracted.business) for item in extractions
-            ),
-        },
-        parent_span=span_context.get("parent_span") if span_context else None,
-    )
+            prompt=merge_prompt,
+            output_schema=MergeStructuredOutput,
+            generation_name="merge_company_profile",
+            metadata={
+                "num_pages_used": len(extractions),
+                "num_address_candidates": sum(
+                    len(item.extracted.addresses) for item in extractions
+                ),
+                "num_business_candidates": sum(
+                    len(item.extracted.business) for item in extractions
+                ),
+            },
+            parent_span=span.span,
+        )
 
-    final_addresses = _postprocess_addresses(merged.address, slot_to_url)
-    final_business_summary = _build_business_summary(
-        merged.business_summary.detail,
-        merged.business_summary.citationSlots,
-        slot_to_url,
-    )
+        final_addresses = _postprocess_addresses(merged.address, slot_to_url)
+        final_business_summary = _build_business_summary(
+            merged.business_summary.detail,
+            merged.business_summary.citationSlots,
+            slot_to_url,
+        )
 
-    return CompanyDetailOutput(
-        company_name=company_name,
-        company_url=company_url,
-        address=final_addresses,
-        business_summary=final_business_summary,
-        viewed_source_urls=list(slot_to_url.values()),
-    )
+        return span.finish(
+            CompanyDetailOutput(
+                company_name=company_name,
+                company_url=company_url,
+                address=final_addresses,
+                business_summary=final_business_summary,
+                viewed_source_urls=list(slot_to_url.values()),
+            )
+        )
 
 
 def _normalize_for_dedupe(text: str) -> str:

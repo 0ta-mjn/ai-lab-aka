@@ -8,7 +8,6 @@ from src.infra.jina_ai import JinaReaderResponse, LinkItem, fetch_jina_reader_pa
 from src.infra.llm.generate_structured_output import generate_structured_output
 
 from .schema import HubPageLinks
-from .utils import is_same_domain
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +19,12 @@ class HubSelectionResult(BaseModel):
     )
 
 
-def explore_hubs(
-    company_name: str, company_url: str, *, parent_span: LangfuseSpan | None = None
+def discover_hub_pages(
+    company_name: str,
+    company_url: str,
+    *,
+    max_hub_candidates: int = 5,
+    parent_span: LangfuseSpan | None = None,
 ) -> List[HubPageLinks]:
     """
     Explore Hub pages and collect potential URLs grouped by hub pages.
@@ -34,7 +37,7 @@ def explore_hubs(
 
     # Fetch Top Page
     try:
-        top_result = fetch_jina_reader_page(company_url)
+        top_result = fetch_jina_reader_page(company_url, tool_name="fetch_initial_page")
     except Exception as e:
         logger.warning(f"Failed to fetch top page {company_url}: {e}")
         top_result = None
@@ -46,7 +49,7 @@ def explore_hubs(
     # Top hub item
     norm_top_url = top_result.url
     top_title = top_result.title or "Top Page"
-    top_links = links_from_jina_response(norm_top_url, top_result)
+    top_links = _links_from_jina_response(norm_top_url, top_result)
 
     # Prepare list for LLM selection
     current_links_list = top_links
@@ -66,7 +69,7 @@ Target Company:
 
 Index Range:
 - valid_indices: 0..{len(limited_pool) - 1}
-- select_count: 0..3
+- select_count: 0..{max_hub_candidates - 1}
 
 Available Links (index is global):
 {links_text}
@@ -101,11 +104,11 @@ Output:
 """,
             prompt=hub_prompt,
             output_schema=HubSelectionResult,
-            generation_name="discover_select_hubs",
+            generation_name="discover_hub_pages",
             metadata={
                 "company_name": company_name,
                 "company_url": company_url,
-                "max_candidates": 5,
+                "max_candidates": max_hub_candidates,
             },
             parent_span=parent_span,
         )
@@ -129,11 +132,11 @@ Output:
             continue
 
         try:
-            hub_res = fetch_jina_reader_page(hub_url)
+            hub_res = fetch_jina_reader_page(hub_url, tool_name="fetch_hub_page")
             if not hub_res:
                 continue
             hub_title = (hub_res.title or hub_meta.title or hub_url).strip()
-            hub_links = links_from_jina_response(hub_url, hub_res)
+            hub_links = _links_from_jina_response(hub_url, hub_res)
             hub_items.append(
                 HubPageLinks(title=hub_title, url=hub_url, links=hub_links)
             )
@@ -144,17 +147,18 @@ Output:
     return hub_items
 
 
-def links_from_jina_response(
+def _links_from_jina_response(
     base_url: str, jina_result: JinaReaderResponse
 ) -> List[LinkItem]:
-    """Extract same-domain links, ensuring uniqueness and normalization."""
+    """Ensuring uniqueness and normalization."""
     if not jina_result or not jina_result.links:
         return []
 
     discovered: dict[str, str] = {}
     for link_item in jina_result.links:
         norm_url = link_item.url
-        if not is_same_domain(norm_url, base_url):
+
+        if _is_blacklisted(norm_url):
             continue
 
         if norm_url not in discovered:
@@ -165,3 +169,18 @@ def links_from_jina_response(
     links = [LinkItem(url=u, title=t) for u, t in discovered.items()]
     links.sort(key=lambda x: x.url)
     return links
+
+
+def _is_blacklisted(url: str) -> bool:
+    BLACK_LIST_DOMAIN = [
+        "x.com",
+        "twitter.com",
+        "facebook.com",
+        "instagram.com",
+        "linkedin.com",
+        "tiktok.com",
+        "youtube.com",
+        "line.me",
+        # add more
+    ]
+    return any(domain in url for domain in BLACK_LIST_DOMAIN)

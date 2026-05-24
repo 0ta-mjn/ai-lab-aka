@@ -2,9 +2,9 @@ import logging
 
 from src.infra.langfuse import WithSpanContext, with_langfuse_span
 
-from .explore_hubs import explore_hubs
+from .discover_hub_pages import discover_hub_pages
 from .schema import DiscoveryResult
-from .select_candidates import select_candidates
+from .select_candidate_pages import select_candidate_pages
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +35,10 @@ def discover_company_detail_candidates(
         span.set_input({"company_name": company_name, "company_url": company_url})
 
         # Explore Hubs
-        hubs = explore_hubs(company_name, company_url, parent_span=span.span)
+        hubs = discover_hub_pages(company_name, company_url, parent_span=span.span)
 
         # Select Candidates
-        discovery_result = select_candidates(
+        discovery_result = select_candidate_pages(
             company_name,
             company_url,
             hubs,

@@ -11,7 +11,6 @@ from .schema import (
     DiscoveryResult,
     HubPageLinks,
 )
-from .utils import is_same_domain
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,7 @@ class CandidateSelectionResult(BaseModel):
     selections: List[CandidateSelection]
 
 
-def select_candidates(
+def select_candidate_pages(
     company_name: str,
     company_url: str,
     available_hubs: List[HubPageLinks],
@@ -127,7 +126,7 @@ Output:
 """,
             prompt=selection_prompt,
             output_schema=CandidateSelectionResult,
-            generation_name="discover_select_candidates",
+            generation_name="select_candidate_pages",
             metadata={"company_name": company_name, "company_url": company_url},
             parent_span=parent_span,
         )
@@ -179,14 +178,10 @@ def _collect_unique_same_domain_pool_items(
     for hub in available_hubs:
         hub_title = _normalize_title(hub.title, hub.url)
 
-        if is_same_domain(hub.url, company_url) and hub.url not in seen_urls:
-            seen_urls.add(hub.url)
-            pool_items.append((hub.url, hub_title, hub_title, hub.url))
+        seen_urls.add(hub.url)
+        pool_items.append((hub.url, hub_title, hub_title, hub.url))
 
         for link in hub.links:
-            if not is_same_domain(link.url, company_url):
-                continue
-
             title = _normalize_title(link.title, link.url)
             if link.url in seen_urls:
                 continue

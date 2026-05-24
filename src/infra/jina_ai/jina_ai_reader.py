@@ -45,7 +45,9 @@ class JinaReaderResponse(BaseModel):
     name="fetch_jina_reader_page",
     capture_output=True,
 )
-def fetch_jina_reader_page(url: str) -> Optional[JinaReaderResponse]:
+def fetch_jina_reader_page(
+    url: str, *, tool_name: str | None = None
+) -> Optional[JinaReaderResponse]:
     """
     Jina AI Readerを使用してページを取得するラッパー関数。
 
@@ -67,8 +69,7 @@ def fetch_jina_reader_page(url: str) -> Optional[JinaReaderResponse]:
         raise ValueError("JINA_AI_API_KEY environment variable is not set.")
 
     langfuse_context.update_current_generation(
-        model="jina-ai-reader",
-        input={"url": url},
+        model="jina-ai-reader", input={"url": url}, level="DEBUG", name=tool_name
     )
 
     # Jina AI Reader endpoint
