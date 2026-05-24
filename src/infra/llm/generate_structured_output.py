@@ -53,7 +53,8 @@ def generate_structured_output(
     parent = parent_span if parent_span else get_client()
     system_prompt = system_prompt.strip() if system_prompt else None
     prompt = prompt.strip()
-    with parent.start_as_current_generation(
+    with parent.start_as_current_observation(
+        as_type="generation",
         name=generation_name,
         model=model_adapter.get_langfuse_model_name(),
         input={

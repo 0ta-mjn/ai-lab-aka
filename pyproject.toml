@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
-    "langfuse>=3.14.1",
+    "langfuse>=4.6.1",
     "litellm>=1.81.12",
     "mypy>=1.19.1",
     "nest-asyncio>=1.6.0",

@@ -70,7 +70,7 @@ def extract_company_detail_from_page(
 
     try:
         extracted = generate_structured_output(
-            model="gemini/gemini-2.5-flash-lite",
+            model="gemini/gemini-3.1-flash-lite",
             system_prompt="""
 Role:
 - Extract structured company details from one official website page.

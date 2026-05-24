@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator, TypedDict, TypeVar
 
-from langfuse import LangfuseSpan, get_client
+from langfuse import LangfuseSpan, get_client, propagate_attributes
 
 
 class TraceInit(TypedDict, total=False):
@@ -51,17 +51,12 @@ T = TypeVar("T")
 @dataclass(frozen=True)
 class ObservationHandle:
     span: LangfuseSpan
-    _should_update_trace_output: bool
 
     def set_input(self, input: Any) -> None:
         self.span.update(input=input)
-        if self._should_update_trace_output:
-            self.span.update_trace(input=input)
 
     def set_output(self, output: Any) -> None:
         self.span.update(output=output)
-        if self._should_update_trace_output:
-            self.span.update_trace(output=output)
 
     def finish(self, value: T) -> T:
         self.set_output(value)
@@ -101,23 +96,36 @@ def with_langfuse_span(
     parent_span = span_context.get("parent_span") if span_context else None
     trace_init = span_context.get("trace_init") if span_context else None
 
-    if parent_span is not None:
-        cm = parent_span.start_as_current_observation(
-            name=span_name,
-            as_type="span",
-        )
-    else:
-        langfuse = get_client()
-        cm = langfuse.start_as_current_observation(
-            name=span_name,
-            as_type="span",
-        )
+    from contextlib import ExitStack
 
-    with cm as span:
+    with ExitStack() as stack:
         if trace_init is not None:
-            span.update_trace(**trace_init)
+            stack.enter_context(
+                propagate_attributes(
+                    trace_name=trace_init.get("name"),
+                    user_id=trace_init.get("user_id"),
+                    session_id=trace_init.get("session_id"),
+                    metadata=trace_init.get("metadata"),
+                    tags=trace_init.get("tags"),
+                    version=trace_init.get("version"),
+                )
+            )
 
-        yield ObservationHandle(
-            span=span,
-            _should_update_trace_output=trace_init is not None,
-        )
+        if parent_span is not None:
+            cm = parent_span.start_as_current_observation(
+                name=span_name,
+                as_type="span",
+            )
+        else:
+            langfuse = get_client()
+            cm = langfuse.start_as_current_observation(
+                name=span_name,
+                as_type="span",
+            )
+
+        span = stack.enter_context(cm)
+
+        if trace_init is not None and trace_init.get("public"):
+            span.set_trace_as_public()
+
+        yield ObservationHandle(span=span)

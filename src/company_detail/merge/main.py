@@ -223,7 +223,8 @@ def _build_business_summary(
     )
     cleaned_detail = re.sub(r"\s{2,}", " ", cleaned_detail).strip()
     ordered_source_urls = {
-        key: valid_source_urls[key] for key in sorted(valid_source_urls.keys(), key=int)
+        key: valid_source_urls[key]
+        for key in sorted(valid_source_urls.keys(), key=lambda k: int(k))
     }
     if not cleaned_detail:
         return BusinessSummaryOutput(detail="", sourceUrls={})

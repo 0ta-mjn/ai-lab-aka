@@ -6,6 +6,7 @@ from typing import Literal, Optional
 
 from src.company_detail.agent import run_company_detail_agent
 from src.company_detail.workflow import run_company_detail_workflow
+from src.infra.langfuse.with_span import WithSpanContext
 
 logger = getLogger(__name__)
 
@@ -39,7 +40,7 @@ def run_company_detail_workflow_csv(
                 continue
 
             logger.info("Processing company: %s, URL: %s", company_name, company_url)
-            span_context = {
+            span_context: WithSpanContext = {
                 "trace_init": {
                     "name": "company_detail_csv_batch",
                     "session_id": session_id,
