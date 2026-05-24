@@ -3,6 +3,7 @@ import argparse
 from dotenv import load_dotenv
 
 from src.company_detail.run_csv_batch import run_company_detail_workflow_csv
+from src.company_detail.tracing.stats import generate_session_stats_json
 from src.company_detail.workflow import run_company_detail_workflow
 from src.infra.jina_ai import fetch_jina_reader_page
 
@@ -93,6 +94,21 @@ def register_company_detail_workflow(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(func=func)
 
 
+def register_company_detail_stats(parser: argparse.ArgumentParser) -> None:
+    """
+    session_idからLangfuseの統計情報を取得するCLIコマンド
+    """
+    parser.add_argument("session_id", type=str, help="Langfuse Session ID")
+    parser.add_argument(
+        "--output_path", type=str, required=True, help="Output JSON file path"
+    )
+
+    def func(args: argparse.Namespace) -> None:
+        generate_session_stats_json(args.session_id, args.output_path)
+
+    parser.set_defaults(func=func)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """
     CLIコマンドを定義する
@@ -111,6 +127,12 @@ def build_parser() -> argparse.ArgumentParser:
     register_company_detail_workflow_csv(
         subparsers.add_parser(
             "company-detail-csv", help="Run company detail workflow in batch from CSV"
+        )
+    )
+
+    register_company_detail_stats(
+        subparsers.add_parser(
+            "company-detail-stats", help="Get Langfuse stats for a session"
         )
     )
 

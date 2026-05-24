@@ -1,9 +1,9 @@
+from src.company_detail.schema import CompanyDetailOutput
 from src.infra.langfuse import WithSpanContext, with_langfuse_span
 
 from .discover import discover_company_detail_candidates
 from .extract import extract_company_detail_from_page
 from .merge import merge_company_detail_extractions
-from .schema import CompanyDetailOutput
 
 
 def run_company_detail_workflow(

@@ -4,7 +4,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from src.infra.jina_ai import fetch_jina_reader_page
-from src.infra.langfuse import WithSpanContext
+from src.infra.langfuse import WithSpanContext, with_langfuse_span
 from src.infra.llm import generate_structured_output
 
 from ..discover import CandidateUrl
@@ -43,19 +43,29 @@ def extract_company_detail_from_page(
     Returns:
         Optional[PageExtractionResult]: 1ページ分の抽出結果。失敗時はNone
     """
-    try:
-        jina_result = fetch_jina_reader_page(candidate.url)
-        if jina_result is None or not jina_result.content:
-            logger.warning(f"Jina Reader returned empty content: url={candidate.url}")
-            return None
-    except Exception as e:
-        logger.warning(
-            f"Failed to fetch page via Jina Reader: url={candidate.url}, error={e}"
-        )
-        return None
+    with with_langfuse_span(
+        span_name="extract_company_profile",
+        span_context=span_context,
+    ) as span:
+        span.set_input({"candidate": candidate.model_dump()})
 
-    page_content = jina_result.content.strip()
-    extraction_prompt = f"""
+        try:
+            jina_result = fetch_jina_reader_page(
+                candidate.url, tool_name="fetch_page_detail"
+            )
+            if jina_result is None or not jina_result.content:
+                logger.warning(
+                    f"Jina Reader returned empty content: url={candidate.url}"
+                )
+                return span.finish(None)
+        except Exception as e:
+            logger.warning(
+                f"Failed to fetch page via Jina Reader: url={candidate.url}, error={e}"
+            )
+            return span.finish(None)
+
+        page_content = jina_result.content.strip()
+        extraction_prompt = f"""
 # Target Metadata
 - target_url: {jina_result.url or candidate.url}
 - title: {jina_result.title or ""}
@@ -68,10 +78,10 @@ def extract_company_detail_from_page(
 </PAGE_CONTENT>
 """
 
-    try:
-        extracted = generate_structured_output(
-            model="gemini/gemini-3.1-flash-lite",
-            system_prompt="""
+        try:
+            extracted = generate_structured_output(
+                model="gemini/gemini-3.1-flash-lite",
+                system_prompt="""
 Role:
 - Extract structured company details from one official website page.
 
@@ -101,23 +111,25 @@ Robustness:
 - Remove duplicates and near-duplicates.
 - Ensure every output item is supported by source content.
 """,
-            prompt=extraction_prompt,
-            output_schema=ExtractedContent,
-            generation_name="extract_page_company_detail",
-            metadata={
-                "page_url": jina_result.url or candidate.url,
-                "candidate_category": candidate.category,
-                "candidate_reason": candidate.reason,
-                "content_length_chars": len(page_content),
-            },
-            parent_span=span_context["parent_span"] if span_context else None,
-        )
-    except Exception:
-        logger.exception("Failed to extract company details from page")
-        return None
+                prompt=extraction_prompt,
+                output_schema=ExtractedContent,
+                generation_name="extract_profile_from_page",
+                metadata={
+                    "page_url": jina_result.url or candidate.url,
+                    "candidate_category": candidate.category,
+                    "candidate_reason": candidate.reason,
+                    "content_length_chars": len(page_content),
+                },
+                parent_span=span.span,
+            )
+        except Exception:
+            logger.exception("Failed to extract company details from page")
+            return span.finish(None)
 
-    return PageExtractionResult(
-        title=jina_result.title or "",
-        url=jina_result.url,
-        extracted=extracted,
-    )
+        return span.finish(
+            PageExtractionResult(
+                title=jina_result.title or "",
+                url=jina_result.url,
+                extracted=extracted,
+            )
+        )
