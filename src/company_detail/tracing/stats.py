@@ -3,9 +3,16 @@ import logging
 import os
 
 from langfuse import Langfuse
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from src.company_detail.schema import CompanyDetailOutput
+from src.company_detail.schema import AddressOutput, BusinessSummaryOutput
+
+
+class StatsTraceOutput(BaseModel):
+    company_url: str
+    address: list[AddressOutput]
+    business_summary: BusinessSummaryOutput
+
 
 logger = logging.getLogger(__name__)
 
@@ -78,13 +85,17 @@ def generate_session_stats_json(session_id: str, output_path: str) -> None:
             except json.JSONDecodeError:
                 pass
 
+        if isinstance(output, dict):
+            if "final_output" in output and isinstance(output["final_output"], dict):
+                output = output["final_output"]
+
         num_addresses = 0
         num_citation_slots = 0
         unique_used_urls = 0
         parsed_output = None
 
         try:
-            parsed_output = CompanyDetailOutput.model_validate(output)
+            parsed_output = StatsTraceOutput.model_validate(output)
             num_addresses = len(parsed_output.address)
             num_citation_slots = len(parsed_output.business_summary.sourceUrls)
 
@@ -150,9 +161,7 @@ def generate_session_stats_json(session_id: str, output_path: str) -> None:
             averages["input_tokens"] += stat["input_tokens"]
             averages["output_tokens"] += stat["output_tokens"]
             averages["cost"] += stat["cost"]
-            averages["llm_cost_excluding_fetches"] += stat[
-                "llm_cost_excluding_fetches"
-            ]
+            averages["llm_cost_excluding_fetches"] += stat["llm_cost_excluding_fetches"]
             averages["fetch_cost"] += stat["fetch_cost"]
             averages["total_cost_including_fetches"] += stat[
                 "total_cost_including_fetches"
