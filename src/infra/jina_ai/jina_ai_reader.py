@@ -4,8 +4,10 @@ from typing import List, Optional
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from langfuse import get_client, observe
+from langfuse import get_client
 from pydantic import BaseModel
+
+from src.infra.langfuse.with_span import WithSpanContext
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -40,13 +42,11 @@ class JinaReaderResponse(BaseModel):
     url: str
 
 
-@observe(
-    as_type="generation",
-    name="fetch_jina_reader_page",
-    capture_output=True,
-)
 def fetch_jina_reader_page(
-    url: str, *, tool_name: str | None = None
+    url: str, 
+    *, 
+    tool_name: str | None = None,
+    span_context: WithSpanContext | None = None,
 ) -> Optional[JinaReaderResponse]:
     """
     Jina AI Readerを使用してページを取得するラッパー関数。
@@ -62,20 +62,23 @@ def fetch_jina_reader_page(
         - 失敗時はログを出力し、Noneを返します
     """
 
-    langfuse_context = get_client()
-
     jina_api_key = os.environ.get("JINA_AI_API_KEY")
     if not jina_api_key:
         raise ValueError("JINA_AI_API_KEY environment variable is not set.")
 
-    langfuse_context.update_current_generation(
-        model="jina-ai-reader", input={"url": url}, level="DEBUG", name=tool_name
-    )
+    parent = span_context.get("parent_span") if span_context else get_client()
 
-    # Jina AI Reader endpoint
-    target_url = f"https://r.jina.ai/{url}"
+    with parent.start_as_current_observation(
+        as_type="generation",
+        name=tool_name or "fetch_jina_reader_page",
+        model="jina-ai-reader",
+        input={"url": url},
+        level="DEBUG",
+    ) as generation:
+        # Jina AI Reader endpoint
+        target_url = f"https://r.jina.ai/{url}"
 
-    headers = {
+        headers = {
         "Accept": "application/json",
         "Authorization": f"Bearer {jina_api_key}",
         "X-Locale": "ja-JP",
@@ -84,52 +87,57 @@ def fetch_jina_reader_page(
         "X-Base": "final",
     }
 
-    try:
-        with httpx.Client(timeout=30.0) as client:
-            response = client.get(target_url, headers=headers)
-            response.raise_for_status()
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.get(target_url, headers=headers)
+                response.raise_for_status()
 
-            response_json = response.json()
-            data = response_json.get("data", {})
+                response_json = response.json()
+                data = response_json.get("data", {})
 
-            # token使用量の取得 (data.usage.tokens または meta.usage.tokens)
-            usage_tokens = data.get("usage", {}).get("tokens")
-            if usage_tokens is None:
-                usage_tokens = (
-                    response_json.get("meta", {}).get("usage", {}).get("tokens", 0)
-                )
-
-            if usage_tokens:
-                langfuse_context.update_current_generation(
-                    usage_details={"input_tokens": 0, "output_tokens": usage_tokens}
-                )
-
-            # Jina API returns links as a dict {title: url}
-            page_url = data.get("url", url)
-            raw_links = data.get("links", {})
-            formatted_links = []
-            if isinstance(raw_links, dict):
-                for text, link_url in raw_links.items():
-                    normalized_link_url = _normalize_url(page_url, link_url)
-                    formatted_links.append(
-                        LinkItem(
-                            title=text.strip() if isinstance(text, str) else "",
-                            url=normalized_link_url,
-                        )
+                # token使用量の取得 (data.usage.tokens または meta.usage.tokens)
+                usage_tokens = data.get("usage", {}).get("tokens")
+                if usage_tokens is None:
+                    usage_tokens = (
+                        response_json.get("meta", {}).get("usage", {}).get("tokens", 0)
                     )
 
-            result = JinaReaderResponse(
-                content=data.get("content", ""),
-                links=formatted_links,
-                title=data.get("title"),
-                description=data.get("description"),
-                url=page_url,
-            )
-            return result
+                if usage_tokens:
+                    generation.update(
+                        usage_details={"input_tokens": 0, "output_tokens": usage_tokens}
+                    )
 
-    except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error fetching {url} via Jina: {e}")
-        langfuse_context.update_current_generation(
-            status_message=f"HTTP error: {e.response.status_code}"
-        )
-        return None
+                # Jina API returns links as a dict {title: url}
+                page_url = data.get("url", url)
+                raw_links = data.get("links", {})
+                formatted_links = []
+                if isinstance(raw_links, dict):
+                    for text, link_url in raw_links.items():
+                        normalized_link_url = _normalize_url(page_url, link_url)
+                        formatted_links.append(
+                            LinkItem(
+                                title=text.strip() if isinstance(text, str) else "",
+                                url=normalized_link_url,
+                            )
+                        )
+
+                result = JinaReaderResponse(
+                    content=data.get("content", ""),
+                    links=formatted_links,
+                    title=data.get("title"),
+                    description=data.get("description"),
+                    url=page_url,
+                )
+                generation.update(output=result.model_dump())
+                return result
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error fetching {url} via Jina: {e}")
+            generation.update(
+                status_message=f"HTTP error: {e.response.status_code}",
+                level="ERROR"
+            )
+            return None
+        except Exception as e:
+            generation.update(status_message=str(e), level="ERROR")
+            raise

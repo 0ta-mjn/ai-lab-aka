@@ -53,7 +53,9 @@ def extract_company_detail_from_page(
 
         try:
             jina_result = fetch_jina_reader_page(
-                candidate.url, tool_name="fetch_page_detail"
+                candidate.url, 
+                tool_name="fetch_page_detail",
+                span_context={"parent_span": span.span}
             )
             if jina_result is None or not jina_result.content:
                 logger.warning(

@@ -38,9 +38,15 @@ def discover_hub_pages(
     - links: same-domain links found on that hub page
     """
 
+    span_context = {"parent_span": parent_span} if parent_span else None
+
     # Fetch Top Page
     try:
-        top_result = fetch_jina_reader_page(company_url, tool_name="fetch_initial_page")
+        top_result = fetch_jina_reader_page(
+            company_url, 
+            tool_name="fetch_initial_page",
+            span_context=span_context
+        )
     except Exception as e:
         logger.warning(f"Failed to fetch top page {company_url}: {e}")
         top_result = None
@@ -138,7 +144,11 @@ Available Links (index is global):
     def fetch_hub_item(hub_meta: LinkItem) -> HubPageLinks | None:
         hub_url = hub_meta.url
         try:
-            hub_res = fetch_jina_reader_page(hub_url, tool_name="fetch_hub_page")
+            hub_res = fetch_jina_reader_page(
+                hub_url, 
+                tool_name="fetch_hub_page",
+                span_context=span_context
+            )
             if not hub_res:
                 return None
             hub_title = (hub_res.title or hub_meta.title or hub_url).strip()
