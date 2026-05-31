@@ -1,9 +1,23 @@
-from agents import function_tool
+import re
 
-from src.company_detail.schema import CompanyDetailOutput
+from agents import function_tool
+from pydantic import BaseModel
+
+from src.company_detail.schema import (
+    AddressOutput,
+    BusinessSummaryOutput,
+    CompanyDetailOutput,
+)
 from src.infra.jina_ai import fetch_jina_reader_page
 from src.infra.langfuse.with_span import WithSpanContext
-from src.infra.llm.agents import run_agent_sync
+from src.infra.llm.agents import ToolExecution, run_agent_sync
+
+
+class AgentCompanyDetailOutput(BaseModel):
+    company_name: str
+    company_url: str
+    address: list[AddressOutput]
+    business_summary: BusinessSummaryOutput
 
 
 @function_tool
@@ -59,7 +73,6 @@ def run_company_detail_agent(
 - `business_summary.detail` は日本語で、公式サイトに書かれた事業・サービス・プロダクトの事実を要約してください。
 - 事業概要には根拠番号 `[1]`, `[2]` のような引用番号を含めてください。
 - `business_summary.sourceUrls` は、本文中の引用番号と根拠URLの対応だけを入れてください。keyは `"1"` のような数字文字列にし、`"[1]"` のように角括弧を含めないでください。
-- `viewed_source_urls` には、`access_url` で正常に取得したURLを入れてください。
 
 禁止事項:
 - ページ本文にない住所・事業内容を推測しないでください。
@@ -69,12 +82,64 @@ def run_company_detail_agent(
 
     input_text = f"以下の企業情報を収集してください。\n企業名: {company_name}\n公式サイトURL: {company_url}"
 
-    return run_agent_sync(
+    agent_result = run_agent_sync(
         model="openai/gpt-5.4-mini",
         system_prompt=system_prompt,
         prompt=input_text,
         tools=[access_url],
-        output_schema=CompanyDetailOutput,
+        output_schema=AgentCompanyDetailOutput,
         generation_name="run_company_detail_agent",
         span_context=span_context,
     )
+
+    output = agent_result.final_output
+    return CompanyDetailOutput(
+        company_name=output.company_name,
+        company_url=output.company_url,
+        address=output.address,
+        business_summary=output.business_summary,
+        viewed_source_urls=_extract_accessed_urls(agent_result.tool_executions),
+    )
+
+
+def _extract_accessed_urls(tool_executions: list[ToolExecution]) -> list[str]:
+    urls = []
+    seen = set()
+
+    for execution in tool_executions:
+        if execution.tool_name != "access_url":
+            continue
+
+        url = _extract_page_url_from_tool_output(execution.output)
+        if url is None:
+            url = _extract_requested_url(execution.arguments)
+        if url is None:
+            continue
+
+        normalized = _normalize_url_for_dedupe(url)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        urls.append(url)
+
+    return urls
+
+
+def _extract_requested_url(arguments) -> str | None:
+    if isinstance(arguments, dict):
+        url = arguments.get("url")
+        return url if isinstance(url, str) else None
+    return None
+
+
+def _extract_page_url_from_tool_output(output) -> str | None:
+    if not isinstance(output, str):
+        return None
+    match = re.search(r"^# Page URL\s*\n(.+)$", output, flags=re.MULTILINE)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def _normalize_url_for_dedupe(url: str) -> str:
+    return url.strip().rstrip("/")
