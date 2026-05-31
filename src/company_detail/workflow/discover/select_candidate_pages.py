@@ -5,6 +5,7 @@ from langfuse import LangfuseSpan
 from pydantic import BaseModel, Field
 
 from src.infra.llm.generate_structured_output import generate_structured_output
+from src.infra.llm.registry import ModelName
 
 from .schema import (
     CandidateUrl,
@@ -33,6 +34,7 @@ def select_candidate_pages(
     company_url: str,
     available_hubs: List[HubPageLinks],
     *,
+    model: ModelName = "gemini/gemini-3.1-flash-lite",
     parent_span: LangfuseSpan | None = None,
 ) -> DiscoveryResult:
     """
@@ -84,45 +86,46 @@ Available Links:
 
     try:
         selection_result = generate_structured_output(
-            model="gemini/gemini-3.1-flash-lite",
+            model=model,
             system_prompt="""
-Role: Select the best candidate pages for downstream extraction from a provided same-domain link list.
+役割:
+- 提示されたリンク一覧から、住所情報と事業概要の抽出に使う候補ページを選んでください。
 
-Downstream use:
-- Each selected page will be fetched and an extraction step will try to pull:
-    - addresses (本社/拠点/所在地)
-    - business/service facts (事業内容/サービス/プロダクト)
-- Prefer pages that likely CONTAIN the information (content pages), not just navigation link lists.
+後続処理の目的:
+- 選ばれた各ページを取得し、以下を抽出します。
+  - 住所: 本社、本店、本社オフィス、支社、営業所、所在地、アクセス、拠点
+  - 事業内容: 事業、サービス、プロダクト、ソリューション、提供価値
+- 単なるナビゲーションページより、実際に情報が書かれていそうな本文ページを優先してください。
 
-Selection rubric (aim for balance):
-- Address-focused pages: 1-2
-    - Examples: 会社概要 with 所在地, アクセス, 拠点一覧, 会社情報 where address is written
-- Business-focused pages: 1-3
-    - Examples: 事業内容, サービス一覧, プロダクト/ソリューション
-- If available, include a company profile/about page (会社概要/企業情報) because it often contains the official address.
+選定基準:
+- 住所系ページを1〜2件選んでください。例: 会社概要、企業情報、アクセス、所在地、拠点一覧。
+- 事業系ページを1〜3件選んでください。例: 事業内容、サービス一覧、プロダクト、ソリューション。
+- 会社概要・企業情報ページがある場合は、公式住所を含むことが多いため優先してください。
+- 全体で最大5件まで選んでください。
 
-Avoid selecting (unless there is no better option):
-- プライバシーポリシー/利用規約/免責
-- ニュース/プレスリリース/ブログ/イベント/キャンペーン
-- IR/投資家情報（住所が載る場合もあるが優先度は低い）
+避けるページ:
+- プライバシーポリシー、利用規約、免責
+- ニュース、プレスリリース、ブログ、イベント、キャンペーン
+- IR、投資家情報
 - 問い合わせフォームのみのページ
+- この企業の公式ページではないページ
 
-Rules:
-- Choose ONLY from the provided indices
-- Do not select near-duplicates (language duplicates or tracking variants)
+制約:
+- 必ず提示されたindexだけから選んでください。
+- 類似ページ、言語違い、トラッキング違いなどの重複は避けてください。
 
-For each selection, provide:
-- index: the chosen index
-- category: a short snake_case label (free text)
-- reason (Japanese): 1-2 sentences; explicitly state whether it likely contains "住所" and/or "事業内容" and why
+各選択に含める情報:
+- index: 選択したindex
+- category: 短いsnake_caseラベル
+- reason: 日本語で1〜2文。住所または事業内容を含みそうな理由を書いてください。
 
-List format note:
-- The list may be grouped with Markdown headers like "# ..." for readability
-- Indices are global across the entire list (not per section)
+リスト形式の注意:
+- リストはMarkdown見出しでグループ化されている場合があります。
+- indexはセクションごとではなく、リスト全体で一意です。
 
-Output:
-- Return ONLY a JSON object that matches the output schema
-- No prose, no markdown, no extra keys
+出力:
+- 出力スキーマに一致するJSONだけを返してください。
+- 説明文、Markdown、余分なキーは不要です。
 """,
             prompt=selection_prompt,
             output_schema=CandidateSelectionResult,

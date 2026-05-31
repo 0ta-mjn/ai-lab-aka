@@ -13,7 +13,7 @@ def access_url(url: str) -> str:
         result = fetch_jina_reader_page(url)
         if result and result.content:
             links_summary = "\n".join(
-                [f"- {link.title}: {link.url}" for link in result.links[:30]]
+                [f"- {link.title}: {link.url}" for link in result.links[:200]]
             )
             return (
                 f"# Page URL\n{result.url}\n\n"
@@ -36,24 +36,38 @@ def run_company_detail_agent(
     Uses a single LLM agent to freely explore the company website, fetch pages,
     and output the final structured schema.
     """
-    system_prompt = """You are an autonomous AI agent designed to collect detailed company information (addresses and business summary) by navigating their official website.
-You will be provided with the company's name and official URL.
+    system_prompt = """あなたは、企業公式サイトから会社情報を収集するAIエージェントです。
+入力として企業名と公式サイトURLが与えられます。
 
-Your process:
-1. Navigate to the company's official website using the `access_url` tool.
-2. Read the page content and look at the "Found Links" section to find pages like '会社概要' (Company Profile), '事業内容' (Business Summary), or 'アクセス' (Access).
-3. Call `access_url` on these newly found URLs to gather more specific information if necessary.
-4. Once you have gathered sufficient information (up to 5 addresses prioritizing the head office, and a detailed business summary), output the final result.
+目的:
+- 企業の住所情報と事業概要を、公式サイト上の根拠に基づいて抽出してください。
+- workflow版と同じ要件で最終JSONを作成してください。
 
-Constraints & Rules:
-- Do not make up or hallucinate URLs. Only use URLs found in the "Found Links" section or the initial input.
-- `address` array: Output up to 5 addresses. Provide the description (e.g. "本社", "東京支店"), the raw address, and the `sourceUrl` where you found it.
-- `business_summary.detail`: Write a comprehensive summary in Japanese based on the extracted business contents. Include citation numbers like [1], [2].
-- `business_summary.sourceUrls`: Map the citation numbers (as strings, e.g., "1", "2") to the source URLs you viewed.
-- `viewed_source_urls`: List all the URLs you successfully accessed using the `access_url` tool during this process.
+探索方針:
+1. 最初に入力された公式サイトURLを `access_url` ツールで取得してください。
+2. ページ本文と `Found Links` を読み、会社概要、企業情報、事業内容、サービス、プロダクト、アクセス、所在地、拠点一覧に関係するページを優先して追加取得してください。
+3. プライバシーポリシー、利用規約、ニュース、ブログ、イベント、キャンペーン、問い合わせフォームのみのページは、より適切なページがある場合は避けてください。
+4. URLは初期入力URL、または `Found Links` に出てきたURLだけを使用してください。URLを推測して作らないでください。
+
+最終出力要件:
+- JSONスキーマに一致するJSONだけを返してください。説明文やMarkdownは不要です。
+- `company_name` と `company_url` は入力値に合わせてください。
+- `address` は最大5件です。本社・本店・本社オフィスを優先し、その後に主要拠点を入れてください。
+- 各住所は `description`、ページに書かれた住所文字列そのものに近い `address`、根拠ページの `sourceUrl` を入れてください。
+- 住所に建物名、ビル名、施設名、階数、部屋番号、郵便番号が含まれる場合は省略しないでください。番地だけで止めず、同じ住所欄に書かれている末尾情報まで保持してください。
+- 住所は、所在地、本社、支社、営業所、アクセス、住所などの文脈が明確なものだけを採用してください。電話番号、FAX、メールアドレスだけの行は住所として扱わないでください。
+- `business_summary.detail` は日本語で、公式サイトに書かれた事業・サービス・プロダクトの事実を要約してください。
+- 事業概要には根拠番号 `[1]`, `[2]` のような引用番号を含めてください。
+- `business_summary.sourceUrls` は、本文中の引用番号と根拠URLの対応だけを入れてください。keyは `"1"` のような数字文字列にし、`"[1]"` のように角括弧を含めないでください。
+- `viewed_source_urls` には、`access_url` で正常に取得したURLを入れてください。
+
+禁止事項:
+- ページ本文にない住所・事業内容を推測しないでください。
+- 根拠として閲覧していないURLを `sourceUrl` や `business_summary.sourceUrls` に入れないでください。
+- 採用する情報は公式サイト上の内容に限定してください。
 """
 
-    input_text = f"Please collect company details for:\nCompany Name: {company_name}\nCompany URL: {company_url}"
+    input_text = f"以下の企業情報を収集してください。\n企業名: {company_name}\n公式サイトURL: {company_url}"
 
     return run_agent_sync(
         model="openai/gpt-5.4-mini",
