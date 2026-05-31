@@ -69,14 +69,13 @@ def generate_session_stats_json(session_id: str, output_path: str) -> None:
                 else:
                     generations += 1
                     llm_cost_excluding_fetches += observation_cost
+                    usage = getattr(o, "usage", None)
+                    if usage:
+                        if hasattr(usage, "input"):
+                            total_input_tokens += getattr(usage, "input", 0)
 
-            usage = getattr(o, "usage", None)
-            if usage:
-                if hasattr(usage, "input"):
-                    total_input_tokens += getattr(usage, "input", 0)
-
-                if hasattr(usage, "output"):
-                    total_output_tokens += getattr(usage, "output", 0)
+                        if hasattr(usage, "output"):
+                            total_output_tokens += getattr(usage, "output", 0)
 
         output = t.output
         if isinstance(output, str):
@@ -113,9 +112,6 @@ def generate_session_stats_json(session_id: str, output_path: str) -> None:
             pass
 
         total_trace_cost = float(t.total_cost) if t.total_cost else 0.0
-        if total_observation_cost == 0.0:
-            llm_cost_excluding_fetches = total_trace_cost
-            fetch_cost = 0.0
 
         trace_stat = {
             "trace_id": t.id,
@@ -127,7 +123,7 @@ def generate_session_stats_json(session_id: str, output_path: str) -> None:
             "unique_used_urls": unique_used_urls,
             "input_tokens": total_input_tokens,
             "output_tokens": total_output_tokens,
-            "cost": llm_cost_excluding_fetches,
+            "cost": total_trace_cost,
             "llm_cost_excluding_fetches": llm_cost_excluding_fetches,
             "fetch_cost": fetch_cost,
             "total_cost_including_fetches": total_trace_cost,
@@ -189,6 +185,10 @@ def generate_session_stats_json(session_id: str, output_path: str) -> None:
 
 
 def _get_observation_cost(observation) -> float:
+    calculated_total_cost = getattr(observation, "calculated_total_cost", None)
+    if calculated_total_cost is not None:
+        return float(calculated_total_cost)
+
     total_cost = getattr(observation, "total_cost", None)
     if total_cost is not None:
         return float(total_cost)
