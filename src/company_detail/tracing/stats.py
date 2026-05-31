@@ -48,13 +48,20 @@ def generate_session_stats_json(session_id: str, output_path: str) -> None:
 
         total_input_tokens = 0
         total_output_tokens = 0
+        total_observation_cost = 0.0
+        llm_cost_excluding_fetches = 0.0
+        fetch_cost = 0.0
 
         for o in observations:
+            observation_cost = _get_observation_cost(o)
+            total_observation_cost += observation_cost
             if o.type == "GENERATION":
                 if o.name in FETCH_NAMES:
                     fetches += 1
+                    fetch_cost += observation_cost
                 else:
                     generations += 1
+                    llm_cost_excluding_fetches += observation_cost
 
             usage = getattr(o, "usage", None)
             if usage:
@@ -74,6 +81,7 @@ def generate_session_stats_json(session_id: str, output_path: str) -> None:
         num_addresses = 0
         num_citation_slots = 0
         unique_used_urls = 0
+        parsed_output = None
 
         try:
             parsed_output = CompanyDetailOutput.model_validate(output)
@@ -93,9 +101,14 @@ def generate_session_stats_json(session_id: str, output_path: str) -> None:
         except ValidationError:
             pass
 
+        total_trace_cost = float(t.total_cost) if t.total_cost else 0.0
+        if total_observation_cost == 0.0:
+            llm_cost_excluding_fetches = total_trace_cost
+            fetch_cost = 0.0
+
         trace_stat = {
             "trace_id": t.id,
-            "url": parsed_output.company_url,
+            "url": parsed_output.company_url if parsed_output else "",
             "llm_calls": generations,
             "fetches": fetches,
             "addresses": num_addresses,
@@ -103,7 +116,10 @@ def generate_session_stats_json(session_id: str, output_path: str) -> None:
             "unique_used_urls": unique_used_urls,
             "input_tokens": total_input_tokens,
             "output_tokens": total_output_tokens,
-            "cost": float(t.total_cost) if t.total_cost else 0.0,
+            "cost": llm_cost_excluding_fetches,
+            "llm_cost_excluding_fetches": llm_cost_excluding_fetches,
+            "fetch_cost": fetch_cost,
+            "total_cost_including_fetches": total_trace_cost,
             "latency": float(t.latency) if t.latency else 0.0,
         }
         trace_stats_list.append(trace_stat)
@@ -118,6 +134,9 @@ def generate_session_stats_json(session_id: str, output_path: str) -> None:
         "input_tokens": 0.0,
         "output_tokens": 0.0,
         "cost": 0.0,
+        "llm_cost_excluding_fetches": 0.0,
+        "fetch_cost": 0.0,
+        "total_cost_including_fetches": 0.0,
         "latency": 0.0,
     }
 
@@ -131,6 +150,13 @@ def generate_session_stats_json(session_id: str, output_path: str) -> None:
             averages["input_tokens"] += stat["input_tokens"]
             averages["output_tokens"] += stat["output_tokens"]
             averages["cost"] += stat["cost"]
+            averages["llm_cost_excluding_fetches"] += stat[
+                "llm_cost_excluding_fetches"
+            ]
+            averages["fetch_cost"] += stat["fetch_cost"]
+            averages["total_cost_including_fetches"] += stat[
+                "total_cost_including_fetches"
+            ]
             averages["latency"] += stat["latency"]
 
         for key in averages:
@@ -151,3 +177,15 @@ def generate_session_stats_json(session_id: str, output_path: str) -> None:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
     logger.info("Successfully saved stats to %s", output_path)
+
+
+def _get_observation_cost(observation) -> float:
+    total_cost = getattr(observation, "total_cost", None)
+    if total_cost is not None:
+        return float(total_cost)
+
+    cost_details = getattr(observation, "cost_details", None)
+    if isinstance(cost_details, dict):
+        return float(cost_details.get("total", 0.0) or 0.0)
+
+    return 0.0

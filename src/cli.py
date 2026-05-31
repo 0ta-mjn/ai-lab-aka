@@ -2,7 +2,10 @@ import argparse
 
 from dotenv import load_dotenv
 
-from src.company_detail.run_csv_batch import run_company_detail_workflow_csv
+from src.company_detail.run_csv_batch import (
+    run_company_detail_eval_csv,
+    run_company_detail_workflow_csv,
+)
 from src.company_detail.tracing.stats import generate_session_stats_json
 from src.company_detail.workflow import run_company_detail_workflow
 from src.infra.jina_ai import fetch_jina_reader_page
@@ -26,11 +29,11 @@ def register_company_detail_workflow_csv(parser: argparse.ArgumentParser) -> Non
     )
 
     parser.add_argument(
-        "--workflow_type",
+        "--variant",
         type=str,
-        choices=["agents", "workflow"],
-        default="workflow",
-        help="Type of workflow to run (agents or workflow)",
+        choices=["agent", "workflow-gpt", "workflow-cost-optimized"],
+        default="workflow-cost-optimized",
+        help="Variant to run",
     )
 
     def func(args: argparse.Namespace) -> None:
@@ -38,7 +41,50 @@ def register_company_detail_workflow_csv(parser: argparse.ArgumentParser) -> Non
             args.csv_path,
             output_path=args.output_path,
             session_id=args.session_id,
-            workflow_type=args.workflow_type,
+            variant=args.variant,
+        )
+
+    parser.set_defaults(func=func)
+
+
+def register_company_detail_eval_csv(parser: argparse.ArgumentParser) -> None:
+    """
+    Baseline / VariantA / VariantBをCSV入力で実行し、簡易評価を出力するCLIコマンド
+    """
+    parser.add_argument(
+        "csv_path",
+        type=str,
+        help=(
+            "Input CSV file path "
+            "(company_name, company_url, expected_address, expected_business_keyword)"
+        ),
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        required=True,
+        help="Output directory for JSONL outputs and eval JSON files",
+    )
+    parser.add_argument(
+        "--variants",
+        nargs="+",
+        choices=["agent", "workflow-gpt", "workflow-cost-optimized"],
+        default=["agent", "workflow-gpt", "workflow-cost-optimized"],
+        help="Variants to run",
+    )
+    parser.add_argument(
+        "--session_id_prefix",
+        type=str,
+        default=None,
+        help="Langfuse Session ID prefix for trace correlation",
+    )
+
+    def func(args: argparse.Namespace) -> None:
+        run_company_detail_eval_csv(
+            args.csv_path,
+            args.output_dir,
+            variants=args.variants,
+            session_id_prefix=args.session_id_prefix,
         )
 
     parser.set_defaults(func=func)
@@ -127,6 +173,13 @@ def build_parser() -> argparse.ArgumentParser:
     register_company_detail_workflow_csv(
         subparsers.add_parser(
             "company-detail-csv", help="Run company detail workflow in batch from CSV"
+        )
+    )
+
+    register_company_detail_eval_csv(
+        subparsers.add_parser(
+            "company-detail-eval-csv",
+            help="Run Baseline / VariantA / VariantB and evaluate from CSV",
         )
     )
 

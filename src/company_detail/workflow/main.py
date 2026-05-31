@@ -1,5 +1,8 @@
+from concurrent.futures import ThreadPoolExecutor
+
 from src.company_detail.schema import CompanyDetailOutput
 from src.infra.langfuse import WithSpanContext, with_langfuse_span
+from src.infra.llm.registry import ModelName
 
 from .discover import discover_company_detail_candidates
 from .extract import extract_company_detail_from_page
@@ -10,6 +13,10 @@ def run_company_detail_workflow(
     company_name: str,
     company_url: str,
     *,
+    hub_selection_model: ModelName = "gemini/gemini-3.1-flash-lite",
+    candidate_selection_model: ModelName = "gemini/gemini-3.1-flash-lite",
+    extraction_model: ModelName = "gemini/gemini-3.1-flash-lite",
+    merge_model: ModelName = "openai/gpt-5.4-mini",
     span_context: WithSpanContext | None = None,
 ) -> CompanyDetailOutput:
     """
@@ -37,29 +44,41 @@ def run_company_detail_workflow(
             discovery_result = discover_company_detail_candidates(
                 company_name,
                 company_url,
+                hub_selection_model=hub_selection_model,
+                candidate_selection_model=candidate_selection_model,
                 span_context={
                     "parent_span": obs.span,
                 },
             )
 
             # 2. Extraction (抽出)
-            extraction_results = []
-            for candidate in discovery_result.candidates:
-                extracted = extract_company_detail_from_page(
+            def extract_candidate(candidate):
+                return extract_company_detail_from_page(
                     candidate,
+                    model=extraction_model,
                     span_context={
                         "parent_span": obs.span,
                     },
                 )
-                if extracted is None:
-                    continue
-                extraction_results.append(extracted)
+
+            extraction_results = []
+            if discovery_result.candidates:
+                max_workers = min(5, len(discovery_result.candidates))
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    for extracted in executor.map(
+                        extract_candidate,
+                        discovery_result.candidates,
+                    ):
+                        if extracted is None:
+                            continue
+                        extraction_results.append(extracted)
 
             # 3. Merge (統合)
             final_output = merge_company_detail_extractions(
                 company_name,
                 company_url,
                 extraction_results,
+                model=merge_model,
                 span_context={
                     "parent_span": obs.span,
                 },

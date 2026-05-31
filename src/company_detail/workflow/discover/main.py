@@ -1,6 +1,7 @@
 import logging
 
 from src.infra.langfuse import WithSpanContext, with_langfuse_span
+from src.infra.llm.registry import ModelName
 
 from .discover_hub_pages import discover_hub_pages
 from .schema import DiscoveryResult
@@ -13,6 +14,8 @@ def discover_company_detail_candidates(
     company_name: str,
     company_url: str,
     *,
+    hub_selection_model: ModelName = "gemini/gemini-3.1-flash-lite",
+    candidate_selection_model: ModelName = "gemini/gemini-3.1-flash-lite",
     span_context: WithSpanContext | None = None,
 ) -> DiscoveryResult:
     """
@@ -35,13 +38,19 @@ def discover_company_detail_candidates(
         span.set_input({"company_name": company_name, "company_url": company_url})
 
         # Explore Hubs
-        hubs = discover_hub_pages(company_name, company_url, parent_span=span.span)
+        hubs = discover_hub_pages(
+            company_name,
+            company_url,
+            model=hub_selection_model,
+            parent_span=span.span,
+        )
 
         # Select Candidates
         discovery_result = select_candidate_pages(
             company_name,
             company_url,
             hubs,
+            model=candidate_selection_model,
             parent_span=span.span,
         )
 

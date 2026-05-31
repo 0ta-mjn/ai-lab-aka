@@ -38,9 +38,14 @@ This project provides a CLI entrypoint for running the workflows. You can execut
 
 - **Run Company Detail Workflow in batch (from CSV)**
   ```bash
-  uv run cli company-detail-csv path/to/input.csv --output_path path/to/output.jsonl --workflow_type workflow
+  uv run cli company-detail-csv path/to/input.csv --output_path path/to/output.jsonl --variant workflow-cost-optimized
   ```
-  *(Note: `workflow_type` can be `agents` or `workflow`)*
+  *(Note: `variant` can be `agent`, `workflow-gpt`, or `workflow-cost-optimized`)*
+
+- **Run Company Detail Evaluation in batch (from CSV)**
+  ```bash
+  uv run cli company-detail-eval-csv path/to/input.csv --output_dir path/to/output-dir
+  ```
 
 - **Fetch a page using Jina AI Reader**
   ```bash

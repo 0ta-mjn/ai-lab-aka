@@ -14,6 +14,7 @@ from src.company_detail.schema import (
 )
 from src.infra.langfuse import WithSpanContext, with_langfuse_span
 from src.infra.llm import generate_structured_output
+from src.infra.llm.registry import ModelName
 
 from ..extract import PageExtractionResult
 
@@ -61,6 +62,7 @@ def merge_company_detail_extractions(
     company_url: str,
     extractions: List[PageExtractionResult],
     *,
+    model: ModelName = "openai/gpt-5.4-mini",
     span_context: WithSpanContext | None = None,
 ) -> CompanyDetailOutput:
     """
@@ -126,38 +128,46 @@ def merge_company_detail_extractions(
 """
 
         merged = generate_structured_output(
-            model="openai/gpt-5.4-mini",
+            model=model,
             system_prompt="""
-Role:
-- Merge page-level extraction results and produce final structured output.
+役割:
+- ページ単位の抽出結果を統合し、最終的な会社情報JSONを作成してください。
 
-Non-negotiable rules:
-- Return only JSON matching schema. No markdown, no prose, no extra keys.
-- Never output URL strings. Use only sourceSlot/citationSlots as slot references.
-- Use only provided page_extractions as evidence.
+必須ルール:
+- 出力スキーマに一致するJSONだけを返してください。
+- Markdown、説明文、余分なキーは不要です。
+- URL文字列を直接出力しないでください。根拠は必ず sourceSlot / citationSlots で参照してください。
+- 提供された page_extractions の情報だけを根拠にしてください。
+- page_extractionsにない住所・事業内容を推測しないでください。
 
-Address rules:
-- Include extracted addresses with sourceSlot.
-- Put head office entries first when description indicates 本社.
-- Output at most 5 addresses.
+住所の統合ルール:
+- 住所は最大5件です。
+- 本社、本店、本社オフィスを優先して先頭に置いてください。
+- その後に主要な支社、営業所、拠点を入れてください。
+- 各住所には根拠ページを示す sourceSlot を必ず入れてください。
+- 重複・類似する住所はまとめてください。
+- addressは入力された住所候補の文字列を短縮しないでください。建物名、ビル名、施設名、階数、部屋番号、郵便番号が含まれている場合は保持してください。
+- 同じ所在地に短い住所と長い住所がある場合は、建物名や階数まで含む長い住所を優先してください。
 
-Business summary rules:
-- Write business_summary.detail in Japanese and include citations like [1], [2].
-- citationSlots must map each citation number string to sourceSlot integer.
-- If no valid business evidence, return detail as empty string and citationSlots as [].
+事業概要の統合ルール:
+- business_summary.detail は日本語で書いてください。
+- 公式サイトに書かれた事業、サービス、プロダクト、ソリューションの事実を中心に要約してください。
+- 本文中には `[1]`, `[2]` のような引用番号を含めてください。
+- citationSlots は本文中の引用番号と sourceSlot の対応だけを入れてください。
+- 有効な事業根拠がない場合は detail を空文字、citationSlots を空配列にしてください。
 
-Fallback rules:
-- If address evidence is missing, return address as [].
+フォールバック:
+- 有効な住所根拠がない場合、address は空配列にしてください。
 
-Output examples:
-- addresses example:
+出力例:
+- address の例:
     {
         "address": [
             {"description": "本社", "address": "東京都千代田区...", "sourceSlot": 1},
             {"description": "支社", "address": "大阪府大阪市...", "sourceSlot": 2}
         ]
     }
-- business_summary example:
+- business_summary の例:
     {
         "business_summary": {
             "detail": "主力事業はデータ分析基盤の提供。[1] 金融向けソリューションも展開。[2]",

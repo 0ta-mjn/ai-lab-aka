@@ -10,6 +10,8 @@ from src.infra.llm.registry import ModelName, get_model
 
 T = TypeVar("T", bound=BaseModel)
 
+_AGENTS_INSTRUMENTED = False
+
 
 def run_agent_sync(
     model: ModelName,
@@ -42,8 +44,11 @@ def run_agent_sync(
     model_adapter = get_model(model)
     agent_model = model_adapter.get_litellm_model_name()
 
-    # Instrument openai-agents with OpenTelemetry for Langfuse
-    OpenAIAgentsInstrumentor().instrument()
+    # Instrument openai-agents with OpenTelemetry for Langfuse.
+    global _AGENTS_INSTRUMENTED
+    if not _AGENTS_INSTRUMENTED:
+        OpenAIAgentsInstrumentor().instrument()
+        _AGENTS_INSTRUMENTED = True
 
     with with_langfuse_span(
         span_name=generation_name,

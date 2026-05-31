@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
 from langfuse import LangfuseSpan
@@ -6,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from src.infra.jina_ai import JinaReaderResponse, LinkItem, fetch_jina_reader_page
 from src.infra.llm.generate_structured_output import generate_structured_output
+from src.infra.llm.registry import ModelName
 
 from .schema import HubPageLinks
 
@@ -24,6 +26,7 @@ def discover_hub_pages(
     company_url: str,
     *,
     max_hub_candidates: int = 5,
+    model: ModelName = "gemini/gemini-3.1-flash-lite",
     parent_span: LangfuseSpan | None = None,
 ) -> List[HubPageLinks]:
     """
@@ -69,7 +72,7 @@ Target Company:
 
 Index Range:
 - valid_indices: 0..{len(limited_pool) - 1}
-- select_count: 0..{max_hub_candidates - 1}
+- select_count: 0..{max_hub_candidates}
 
 Available Links (index is global):
 {links_text}
@@ -78,29 +81,27 @@ Available Links (index is global):
     hub_indices = []
     try:
         hub_result = generate_structured_output(
-            model="gemini/gemini-3.1-flash-lite",
+            model=model,
             system_prompt="""
-Role: Select hub-page candidates from a same-domain link list for a company website discovery workflow.
+役割:
+- 企業公式サイトのリンク一覧から、後続の抽出に役立つハブページ候補を選んでください。
 
-Definition:
-- A hub page is a navigational/category page that links to content pages where we can later extract:
-    - company profile (会社概要/企業情報/About)
-    - business/services (事業内容/サービス/プロダクト)
-    - locations/access (アクセス/所在地/拠点)
+ハブページの定義:
+- 会社概要、企業情報、事業内容、サービス、プロダクト、アクセス、所在地、拠点一覧などの詳細ページへ移動しやすい案内ページです。
 
-Selection rubric (priority order):
-1) Pages clearly about company info/services/offices AND likely to contain many internal links
-2) Top-level category pages (e.g., 会社情報, サービス, 拠点一覧)
-3) Avoid low-signal or single-purpose pages: privacy/terms, news, blog, campaigns, IR, standalone articles
+選定基準:
+1. 会社情報、事業・サービス、所在地・拠点に関係し、内部リンクを多く含みそうなページを優先してください。
+2. 会社情報、サービス、事業紹介、拠点一覧などの上位カテゴリページを優先してください。
+3. プライバシーポリシー、利用規約、ニュース、ブログ、イベント、キャンペーン、問い合わせフォームのみのページは避けてください。
 
-Hard constraints:
-- Choose ONLY from the provided indices
-- Select 0 to 4 items
-- Return an empty list if none fit
+制約:
+- 必ず提示されたindexだけから選んでください。
+- 0件から4件まで選んでください。
+- 適切な候補がない場合は空配列を返してください。
 
-Output:
-- Return ONLY a JSON object that matches the output schema
-- No explanations, no markdown, no extra keys
+出力:
+- 出力スキーマに一致するJSONだけを返してください。
+- 説明文、Markdown、余分なキーは不要です。
 """,
             prompt=hub_prompt,
             output_schema=HubSelectionResult,
@@ -120,6 +121,7 @@ Output:
     hub_items: List[HubPageLinks] = [
         HubPageLinks(title=top_title, url=norm_top_url, links=top_links)
     ]
+    hub_metas = []
     for idx in hub_indices:
         if idx < 0 or idx >= len(limited_pool):
             continue
@@ -131,18 +133,28 @@ Output:
         if hub_url == norm_top_url:
             continue
 
+        hub_metas.append(hub_meta)
+
+    def fetch_hub_item(hub_meta: LinkItem) -> HubPageLinks | None:
+        hub_url = hub_meta.url
         try:
             hub_res = fetch_jina_reader_page(hub_url, tool_name="fetch_hub_page")
             if not hub_res:
-                continue
+                return None
             hub_title = (hub_res.title or hub_meta.title or hub_url).strip()
             hub_links = _links_from_jina_response(hub_url, hub_res)
-            hub_items.append(
-                HubPageLinks(title=hub_title, url=hub_url, links=hub_links)
-            )
+            return HubPageLinks(title=hub_title, url=hub_url, links=hub_links)
         except Exception as e:
             logger.warning(f"Failed to fetch hub page {hub_url}: {e}")
-            # Continue
+            return None
+
+    if hub_metas:
+        max_workers = min(max_hub_candidates, len(hub_metas))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for hub_item in executor.map(fetch_hub_item, hub_metas):
+                if hub_item is None:
+                    continue
+                hub_items.append(hub_item)
 
     return hub_items
 
@@ -181,6 +193,9 @@ def _is_blacklisted(url: str) -> bool:
         "tiktok.com",
         "youtube.com",
         "line.me",
+        "google.com/maps",
+        "maps.google.com",
+        "goo.gl/maps",
         # add more
     ]
     return any(domain in url for domain in BLACK_LIST_DOMAIN)
